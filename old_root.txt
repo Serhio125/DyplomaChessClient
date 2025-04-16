@@ -1,0 +1,370 @@
+import { Link, Outlet, useNavigate } from "react-router-dom";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import axios from "axios";
+import { Button, CircularProgress, TextField } from "@mui/material";
+import GlobalContext from "../contexts/globalContext";
+import { TypeGlobalContext } from "../contexts/typeGlobalContext";
+import { RegistrationPayloadModel } from "../models/registration-payload.model";
+import { io } from "socket.io-client";
+
+export const Root = () => {
+  const [searchGame, setSearchGame] = useState<boolean>(false);
+  const [render, setRender] = useState<boolean>(true);
+  const contextValue = useContext(GlobalContext) as TypeGlobalContext;
+  const [password, setPassword] = useState<string>("");
+  const [login, setLogin] = useState<string>("");
+  const [passwordReg, setPasswordReg] = useState<string>("");
+  const [loginReg, setLoginReg] = useState<string>("");
+  const [firstNameReg, setFirstNameReg] = useState<string>("");
+  const [lastNameReg, setLastNameReg] = useState<string>("");
+  const [countryReg, setCountryReg] = useState<string>("");
+  const navigation = useNavigate();
+  const socket = useRef(
+    io("ws://localhost:3005", {
+      // auth: {
+      //   token: contextValue.sessionToken,
+      // },
+      // query: {
+      //   hello: "world",
+      //   test: true,
+      // },
+      // reconnection: false,
+      autoConnect: false,
+    }),
+  );
+  const socketConnect = () => {
+    socket.current = io("ws://localhost:3005", {
+      auth: {
+        token: contextValue.sessionToken,
+      },
+      query: {
+        event: "search",
+        login: contextValue.sessionCredentials?.login,
+        uuid: contextValue.sessionCredentials?.uuid,
+      },
+      reconnection: false,
+      autoConnect: false,
+    });
+    socket.current.connect();
+    socket.current.on("connect", () => {
+      console.log("Socket connection success?");
+      setSearchGame(true);
+    });
+    socket.current.on("connect_error", (err) => {
+      console.error("Error when attempt to connect to server socket:");
+      console.log(err);
+      setSearchGame(false);
+    });
+    socket.current.on("disconnect", (reason, description) => {
+      console.log("Socket dsiconnected:");
+      console.log(reason);
+      setSearchGame(false);
+    });
+    socket.current.on("startNewGame", (args) => {
+      console.log("Server event startNewGame:");
+      console.log(args);
+      setSearchGame(false);
+      navigation("/activeParty/" + args.activeGameUuid, {
+        replace: true,
+      });
+    });
+    socket.current.on("Error", (args) => {
+      console.log("Server send error:");
+      console.log(args);
+    });
+    socket.current.on("serverError", (args) => {
+      console.log("Server send serverError:");
+      console.log(args);
+    });
+    socket.current.on("clientError", (args) => {
+      console.log("Server send clientError:");
+      console.log(args);
+    });
+  };
+  const socketEmitHandle = () => {
+    if (socket.current.connected) {
+      socket.current.emit("test", {
+        hello: "world",
+        test: true,
+      });
+    }
+  };
+  const socketDisconnect = () => {
+    if (socket.current.connected) {
+      socket.current.disconnect();
+    }
+  };
+  const handleClick = () => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    // @ts-ignore
+    const base64 = btoa(String.fromCharCode.apply(null, data));
+    axios.defaults.withCredentials = true;
+    axios
+      .post("http://localhost:8080/auth", {
+        password: base64
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, ""),
+        login: login,
+      })
+      .then((value) => {
+        console.log(value);
+        contextValue.sessionToken = value.data.sessionToken;
+        contextValue.sessionCredentials = {
+          ...value.data.userData,
+        };
+        setRender((prevState) => !prevState);
+      })
+      .catch((reason) => {
+        console.error(reason);
+      });
+  };
+  const handleRegistr = () => {
+    const payload: RegistrationPayloadModel = {
+      firstName: firstNameReg,
+      country: countryReg,
+      login: loginReg,
+      password: passwordReg,
+      lastName: lastNameReg,
+    };
+    console.log(payload);
+    const encoder = new TextEncoder();
+    const data = encoder.encode(payload.password);
+    // @ts-ignore
+    const base64 = btoa(String.fromCharCode.apply(null, data));
+    payload.password = base64
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    axios.defaults.withCredentials = true;
+    axios
+      .post("http://localhost:8080/registr", {
+        ...payload,
+      })
+      .then((value) => {
+        console.log(value);
+      })
+      .catch((reason) => {
+        console.error(reason);
+      });
+  };
+  const handleClickwoData = () => {
+    axios.defaults.withCredentials = true;
+    axios
+      .post("http://localhost:8080/auth")
+      .then((value) => {
+        console.log(value);
+      })
+      .catch((reason) => {
+        console.error(reason);
+      });
+  };
+  useEffect(() => {
+    axios.defaults.withCredentials = true;
+    axios
+      .post("http://localhost:8080/auth")
+      .then((value) => {
+        console.log(value);
+        contextValue.sessionToken = value.data.sessionToken;
+        contextValue.sessionCredentials = {
+          ...value.data.userData,
+        };
+        setRender((prevState) => !prevState);
+      })
+      .catch((reason) => {
+        console.error(reason);
+      });
+    return () => {
+      console.log("Root component destroyed");
+    };
+  }, []);
+  return contextValue.sessionCredentials ? (
+    <>
+      {contextValue.sessionCredentials && contextValue.sessionToken ? (
+        <div>
+          <h1>{`Login: ${contextValue.sessionCredentials.login}`}</h1>
+          <h1>{`Role: ${contextValue.sessionCredentials.role}`}</h1>
+          <h1>{`Country: ${contextValue.sessionCredentials.country}`}</h1>
+        </div>
+      ) : (
+        <div>
+          <h1>Unauthorized user</h1>
+        </div>
+      )}
+      <div id="sidebar">
+        <Button
+          onClick={() => {
+            socketConnect();
+          }}
+          sx={{ height: "50px" }}
+        >
+          StartSearch
+        </Button>
+        {/*<Button*/}
+        {/*  sx={{ height: "50px" }}*/}
+        {/*  onClick={() => {*/}
+        {/*    socketEmitHandle();*/}
+        {/*  }}*/}
+        {/*>{`Emit 'test' action with random payload`}</Button>*/}
+        <Button
+          sx={{ height: "50px" }}
+          onClick={() => {
+            socketDisconnect();
+          }}
+        >
+          EndSearch
+        </Button>
+        {searchGame ? (
+          <div style={{ width: "100px", height: "100px" }}>
+            <CircularProgress />
+          </div>
+        ) : null}
+        <Button
+          sx={{ height: "50px" }}
+          onClick={() => {
+            navigation("/activeParty/wqerty", {
+              replace: true,
+            });
+          }}
+        >
+          Test Route
+        </Button>
+        <h1>React Router Contacts</h1>
+        <div>
+          <form id="search-form" role="search">
+            <input
+              id="q"
+              aria-label="Search contacts"
+              placeholder="Search"
+              type="search"
+              name="q"
+            />
+            <div id="search-spinner" aria-hidden hidden={true} />
+            <div className="sr-only" aria-live="polite"></div>
+          </form>
+          <form method="post">
+            <button type="submit">New</button>
+          </form>
+        </div>
+        <nav>
+          <ul>
+            <li>
+              <Link to="/contacts/1">Your Name</Link>
+            </li>
+            <li>
+              <Link to="/contacts/2">Your Friend</Link>
+            </li>
+            <li>
+              <Link to={`/activeParty/5f583246-8c50-428d-8a88-403aa9110932`}>
+                Active game
+              </Link>
+            </li>
+            <li>
+              <Link to={`/analysesParty/5f583246-8c50-428d-8a88-403aa9110932`}>
+                Analyses game
+              </Link>
+            </li>
+            <li>
+              <Link to={`/analysesParty`}>Analyses game unauth</Link>
+            </li>
+          </ul>
+        </nav>
+      </div>
+      <Button
+        onClick={() => {
+          handleClick();
+        }}
+      >
+        Auth
+      </Button>
+      <TextField
+        value={password}
+        label="Введите пароль"
+        type="text"
+        onChange={(event) => {
+          setPassword(event.target.value);
+        }}
+      />
+      <TextField
+        value={login}
+        label="Введите логин"
+        type="text"
+        onChange={(event) => {
+          setLogin(event.target.value);
+        }}
+      />
+      <Button
+        onClick={() => {
+          handleClickwoData();
+        }}
+      >
+        Auth
+      </Button>
+      <ul>
+        <li>
+          <TextField
+            value={loginReg}
+            label="Логин регистрация"
+            type="text"
+            onChange={(event) => {
+              setLoginReg(event.target.value);
+            }}
+          />
+        </li>
+        <li>
+          <TextField
+            value={passwordReg}
+            label="пароль регистрация"
+            type="password"
+            onChange={(event) => {
+              setPasswordReg(event.target.value);
+            }}
+          />
+        </li>
+        <li>
+          <TextField
+            value={firstNameReg}
+            label="Имя"
+            type="text"
+            onChange={(event) => {
+              setFirstNameReg(event.target.value);
+            }}
+          />
+        </li>
+        <li>
+          <TextField
+            value={lastNameReg}
+            label="Фамилия"
+            type="text"
+            onChange={(event) => {
+              setLastNameReg(event.target.value);
+            }}
+          />
+        </li>
+        <li>
+          <TextField
+            value={countryReg}
+            label="Страна"
+            type="text"
+            onChange={(event) => {
+              setCountryReg(event.target.value);
+            }}
+          />
+        </li>
+        <li>
+          <Button
+            onClick={() => {
+              handleRegistr();
+            }}
+          >
+            Registr
+          </Button>
+        </li>
+      </ul>
+      {/*<div id="detail">*/}
+      {/*  <Outlet />*/}
+      {/*</div>*/}
+    </>
+  );
+};
